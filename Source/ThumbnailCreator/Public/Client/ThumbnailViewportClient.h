@@ -3,11 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/NoExportTypes.h"
-#include "HighResScreenshot.h"
 #include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewSceneModule.h"
-#include "Editor/AdvancedPreviewScene/Public/SAdvancedPreviewDetailsTab.h"
 #include "Editor/UnrealEd/Public/LevelEditorViewport.h"
 #include "Editor/UnrealEd/Public/EditorViewportClient.h"
 
@@ -58,6 +54,9 @@ public:
 	//Take one single shot
 	void TakeSingleShot();
 
+	//Update transform
+	void UpdateViewportTransform(const int32 FOV, const double Pitch, const double Yaw, const float Zoom);
+	
 	void ResetScene();
 	/*
 	*	Set the static mesh

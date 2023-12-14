@@ -1,40 +1,29 @@
 // Copyright (c) Panda Studios Comm. V.  - All Rights Reserves. Under no circumstance should this could be distributed, used, copied or be published without written approved of Panda Studios Comm. V. 
-#include "ThumbnailViewportClient.h"
+#include "Client/ThumbnailViewportClient.h"
 
 //Thumbnail Core
-#include "ThumbnailOptions.h"
+#include "Objects/ThumbnailOptions.h"
 #include "ThumbnailCreator.h"
 
 //Image
 #include "Runtime/Engine/Public/HighResScreenshot.h"
-#include "Editor/LevelEditor/Private/HighresScreenshotUI.h"
 
 //Engine
 #include "AssetEditorModeManager.h"
-#include "Runtime/CoreUObject/Public/UObject/ConstructorHelpers.h"
-#include "LevelEditor.h"
-#include "Utils.h"
 #include "EngineGlobals.h"
 
 //Slate
-#include "SViewport.h"
-#include "SThumbnailViewport.h"
-#include "Editor/UnrealEd/Public/UnrealWidget.h"
+#include "Slate/SThumbnailViewport.h"
 
 //Components
 #include "Components/SkeletalMeshComponent.h"
-#include "Runtime/Engine/Classes/Engine/StaticMeshActor.h"
 #include "Runtime/Engine/Classes/Components/PostProcessComponent.h"
 #include "Runtime/Engine/Classes/Materials/MaterialInterface.h"
 
 //Scene
 #include "Runtime/Engine/Public/SceneView.h"
 #include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewSceneModule.h"
-#include "Runtime/Engine/Classes/Engine/PostProcessVolume.h"
 #include "Runtime/Engine/Public/SceneManagement.h"
-#include "Runtime/Engine/Public/CanvasTypes.h"
 #include "Runtime/Engine/Classes/Materials/Material.h"
 #include "Runtime/Engine/Public/PreviewScene.h"
 
@@ -55,15 +44,11 @@ FThumbnailViewportClient::FThumbnailViewportClient(const TSharedRef<SThumbnailVi
 	DrawHelper.AxesLineThickness = 5;
 	DrawHelper.PivotSize = 5;
 
-	//Initiate view
-	SetViewLocation(FVector(75, 75, 75));
-	SetViewRotation(FVector(-75, -75, -75).Rotation());
-
 	EngineShowFlags.SetScreenPercentage(true);
 
 	// Set the Default type to Ortho and the XZ Plane
-	ELevelViewportType NewViewportType = LVT_Perspective;
-	SetViewportType(NewViewportType);
+	const ELevelViewportType NewViewportType = LVT_Perspective;
+	FEditorViewportClient::SetViewportType(NewViewportType);
 	
 	// View Modes in Persp and Ortho
 	SetViewModes(VMI_Lit, VMI_Lit);
@@ -110,7 +95,7 @@ FThumbnailViewportClient::FThumbnailViewportClient(const TSharedRef<SThumbnailVi
 	EngineShowFlags.SetPostProcessing(true);
 
 	//Force screen percentage higher
-	PostComp->Settings.ScreenPercentage = 200;
+	PostComp->Settings.ScreenPercentage_DEPRECATED = 200;
 
 	//Unbound
 	PostComp->bUnbound = true;
@@ -123,6 +108,8 @@ FThumbnailViewportClient::FThumbnailViewportClient(const TSharedRef<SThumbnailVi
 	ActorComponents.Add(SkelMeshComp);
 	ActorComponents.Add(MaterialComp);
 
+	//Initiate view
+	UpdateViewportTransform(30, -11.25, -137.5, 0);
 }
 
 void FThumbnailViewportClient::Tick(float DeltaSeconds)
@@ -139,9 +126,6 @@ void FThumbnailViewportClient::Tick(float DeltaSeconds)
 
 void FThumbnailViewportClient::TakeSingleShot()
 {
-	//Enable green mask
-	EngineShowFlags.SetHighResScreenshotMask(true);
-
 	//set the size of the screenshot
 	GScreenshotResolutionX = ThumbnailOptions->ScreenshotXSize;
 	GScreenshotResolutionY = ThumbnailOptions->ScreenshotYSize;
@@ -149,14 +133,14 @@ void FThumbnailViewportClient::TakeSingleShot()
 	//Set the name of the screenshot
 	FString UseName = GetAssetName();
 
-	GetHighResScreenshotConfig().FilenameOverride = "Thumb_" + UseName;
+	GetHighResScreenshotConfig().FilenameOverride = FPaths::ProjectSavedDir() + "Thumbnails/Thumb_" + UseName;
 
+	if (ThumbnailOptions->bUseAutoSize)
+	{
+		UpdateViewportTransform(ThumbnailOptions->FOV, ThumbnailOptions->ThumbnailPitch, ThumbnailOptions->ThumbnailYaw, ThumbnailOptions->ThumbnailZoom);
+	}
 	//Take the shots
 	TakeHighResScreenShot();
-
-	//Turn off green mask
-	EngineShowFlags.SetHighResScreenshotMask(false);
-
 
 	//Remove this image from known images so we can process it again
 	auto ModulePtr = FModuleManager::LoadModulePtr<FThumbnailCreatorModule>(FName("ThumbnailCreator"));
@@ -164,6 +148,25 @@ void FThumbnailViewportClient::TakeSingleShot()
 	{
 		ModulePtr->RemoveFromPreKnown(UseName);
 	}
+}
+
+void FThumbnailViewportClient::UpdateViewportTransform(const int32 FOV, const double Pitch, const double Yaw, const float Zoom)
+{
+	float radius = 0;
+	FVector orbitPoint = FVector(0,0,0);
+	if (MeshComp->IsVisible())
+	{
+		radius = MeshComp->Bounds.SphereRadius;
+		orbitPoint = MeshComp->Bounds.Origin;
+	}
+	else if (SkelMeshComp->IsVisible())
+	{
+		radius = SkelMeshComp->Bounds.SphereRadius;
+		orbitPoint = SkelMeshComp->Bounds.Origin;
+	}
+	ViewFOV = FOV;
+	SetViewRotation(FRotator(Pitch, Yaw, 0));
+	SetViewLocationForOrbiting(orbitPoint, radius*4+Zoom);
 }
 
 void FThumbnailViewportClient::ResetScene()
@@ -198,7 +201,7 @@ void FThumbnailViewportClient::SetSkelMesh(class USkeletalMesh* inMesh, class UA
 		SkelMeshComp->SetSkeletalMesh(inMesh);
 
 		//If our anim asset is valid and we have a skeletal mesh then play it
-		if (AnimAsset && SkelMeshComp->SkeletalMesh)
+		if (AnimAsset && SkelMeshComp->GetSkinnedAsset())
 		{
 			SkelMeshComp->PlayAnimation(AnimAsset, true);
 		}
@@ -206,6 +209,7 @@ void FThumbnailViewportClient::SetSkelMesh(class USkeletalMesh* inMesh, class UA
 		//Flip visibility
 		MeshComp->SetVisibility(false);
 		SkelMeshComp->SetVisibility(true);
+		SkelMeshComp->UpdateBounds();
 	}
 
 	SetComponentVisibility(SkelMeshComp, EScreenshotType::Skeletal);
@@ -256,7 +260,7 @@ FString FThumbnailViewportClient::GetAssetName()
 	else if (ActiveType == EScreenshotType::Skeletal)
 	{
 		FString Name;
-		SkelMeshComp->SkeletalMesh->GetName(Name);
+		SkelMeshComp->GetSkinnedAsset()->GetName(Name);
 		return Name;
 	}
 	else

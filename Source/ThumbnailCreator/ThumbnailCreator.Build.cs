@@ -10,7 +10,6 @@ public class ThumbnailCreator : ModuleRules
 		
 		PublicIncludePaths.AddRange(
 			new string[] {
-				"ThumbnailCreator/Public"
 				// ... add public include paths required here ...
 			}
 			);
@@ -18,7 +17,6 @@ public class ThumbnailCreator : ModuleRules
 		
 		PrivateIncludePaths.AddRange(
 			new string[] {
-				"ThumbnailCreator/Private",
 				// ... add other private include paths required here ...
 			}
 			);

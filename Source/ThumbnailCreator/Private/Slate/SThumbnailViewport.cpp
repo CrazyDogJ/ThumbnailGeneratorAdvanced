@@ -1,16 +1,13 @@
 // Copyright (c) Panda Studios Comm. V.  - All Rights Reserves. Under no circumstance should this could be distributed, used, copied or be published without written approved of Panda Studios Comm. V. 
 
-#include "SThumbnailViewport.h"
-#include "SViewport.h"
+#include "Slate/SThumbnailViewport.h"
 #include "Editor/LevelEditor/Private/SLevelViewportToolBar.h"
-#include "AssetEditorModeManager.h"
 #include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewSceneModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PostProcessComponent.h"
-#include "ThumbnailViewportClient.h"
+#include "Client/ThumbnailViewportClient.h"
 
 
 void SThumbnailViewport::AddReferencedObjects(FReferenceCollector& Collector)

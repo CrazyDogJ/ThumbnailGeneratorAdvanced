@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/NoExportTypes.h"
 #include "ThumbnailOptions.generated.h"
 
 
@@ -20,4 +19,20 @@ public:
 	//Screenshot Y Size
 	UPROPERTY(EditAnywhere, Category = "Setup")
 		int32 ScreenshotYSize = 512;
+
+	UPROPERTY(EditAnywhere, Category = "Setup")
+		bool bUseAutoSize = true;
+
+	UPROPERTY(EditAnywhere, Category = "Viewport")
+		double ThumbnailPitch = -11.25;
+
+	UPROPERTY(EditAnywhere, Category = "Viewport")
+		double ThumbnailYaw = -137.5;
+
+	UPROPERTY(EditAnywhere, Category = "Viewport")
+		double ThumbnailZoom = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Viewport")
+		int32 FOV = 30;
+	
 };

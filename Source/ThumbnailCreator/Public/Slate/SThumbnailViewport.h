@@ -3,11 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/Viewport.h"
-#include "SViewport.h"
 #include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewSceneModule.h"
-#include "SLevelViewport.h"
 #include "SEditorViewport.h"
 #include "Editor/UnrealEd/Public/SCommonEditorViewportToolbarBase.h"
 #include "SlateFwd.h"

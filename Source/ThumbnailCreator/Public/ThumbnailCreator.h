@@ -4,11 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Runtime/Core/Public/Containers/Ticker.h"
-#include "SImage.h"
-#include "SEditorViewport.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewScene.h"
-#include "Editor/AdvancedPreviewScene/Public/AdvancedPreviewSceneModule.h"
-#include "ModuleManager.h"
+#include "Widgets/Images/SImage.h"
+#include "Modules/ModuleManager.h"
 
 class FToolBarBuilder;
 class FMenuBuilder;
@@ -33,12 +30,14 @@ public:
 	*/
 	void AssignAsset(FAssetData _Data, bool bTakeShot);
 
-	//Generate all screenshots from selection of the conten browser
+	//Generate all screenshots from selection of the content browser
 	FReply GenerateFromSelection();
 	//Set preview mesh to the one selected in the content browser
 	FReply PreviewSelected();
 	//generate image without changing any mesh with the current view
 	FReply GenerateView();
+	//update viewport transform by options variables
+	FReply UpdateViewportTransform();
 
 	//Next in queue for the image tick
 	bool NextInQueue(float Delta);
@@ -58,6 +57,9 @@ public:
 	//Images to ignore for process
 	TArray<FString> StartupImages;
 
+	//Images save dir
+	FString Path = FPaths::ProjectSavedDir() + "Thumbnails/";
+	
 	//Tick delegate for the 0.03s image tick
 	FTickerDelegate ImageTickDelegate;
 

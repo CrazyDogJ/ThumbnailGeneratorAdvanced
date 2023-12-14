@@ -6,14 +6,12 @@
 #include "LevelEditor.h"
 #include "PreviewScene.h"
 #include "Editor.h"
-#include "Runtime/Engine/Classes/Engine/Selection.h"
 #include "Engine/SkeletalMesh.h"
 #include "Runtime/Core/Public/Containers/Ticker.h"
-#include "Editor/UnrealEd/Public/ObjectTools.h"
 
 //Thumbnail Core
-#include "ThumbnailViewportClient.h"
-#include "ThumbnailOptions.h"
+#include "Client/ThumbnailViewportClient.h"
+#include "Objects/ThumbnailOptions.h"
 #include "Runtime/Engine/Classes/Animation/AnimationAsset.h"
 #include "ThumbnailCreatorCommands.h"
 #include "ThumbnailCreatorStyle.h"
@@ -21,7 +19,6 @@
 #include "Engine/SkeletalMesh.h"
 
 //Image
-#include "Runtime/Engine/Public/ImageUtils.h"
 #include "Runtime/Core/Public/Misc/FileHelper.h"
 #include "Runtime/Engine/Classes/EditorFramework/AssetImportData.h"
 #include "Editor/UnrealEd/Classes/Factories/TextureFactory.h"
@@ -29,22 +26,19 @@
 #include "Runtime/Core/Public/HAL/FileManager.h"
 #include "Runtime/ImageWrapper/Public/IImageWrapper.h"
 #include "Runtime/ImageWrapper/Public/IImageWrapperModule.h"
-#include "Runtime/AssetRegistry/Public/AssetRegistryModule.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Runtime/Core/Public/Misc/Paths.h"
-#include "Runtime/Core/Public/HAL/FileManagerGeneric.h"
 
 //Slate
-#include "Runtime/Engine/Public/Slate/SlateTextures.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
-#include "SButton.h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
-#include "SSplitter.h"
-#include "SThumbnailViewport.h"
-#include "SEditorViewport.h"
+#include "Widgets/Layout/SSplitter.h"
+#include "Slate/SThumbnailViewport.h"
 #include "PropertyEditorModule.h"
 #include "Editor/AdvancedPreviewScene/Public/SAdvancedPreviewDetailsTab.h"
-#include "SImage.h"
+#include "Widgets/Images/SImage.h"
 #include "Editor/PropertyEditor/Public/IDetailsView.h"
 
 static const FName ThumbnailCreatorTabName("ThumbnailCreator");
@@ -90,20 +84,18 @@ void FThumbnailCreatorModule::StartupModule()
 
 	//Setup a timer every 0.03 seconds to crete a new image or process taken image
 	ImageTickDelegate = FTickerDelegate::CreateRaw(this, &FThumbnailCreatorModule::NextInQueue);
-	FTicker::GetCoreTicker().AddTicker(ImageTickDelegate, 0.03f);
+	FTSTicker::GetCoreTicker().AddTicker(ImageTickDelegate, 0.03f);
 
 
 	//Get all startup images to exclude from processing
 	IFileManager& FileManager = IFileManager::Get();
-
-
-
+	
 	TArray<FString> StartUpShort;
-	FileManager.FindFiles(StartUpShort, *FPaths::ScreenShotDir());
+	FileManager.FindFiles(StartUpShort, *Path);
 	for (FString Short : StartUpShort)
 	{
 		//Add path because Short is just the name, we still need to add the path to the string
-		StartupImages.Add(FPaths::ScreenShotDir() + Short);
+		StartupImages.Add(Path + Short);
 	}
 
 	//THIS IS NEEDED, if you don't do this you will crash the engine upon shutdown
@@ -149,7 +141,7 @@ TSharedRef<SDockTab> FThumbnailCreatorModule::OnSpawnPluginTab(const FSpawnTabAr
 	FDetailsViewArgs Args;
 	Args.bAllowSearch = false;
 	Args.bCustomNameAreaLocation = true;
-	Args.bShowActorLabel = false;
+	Args.bShowObjectLabel = false;
 	Args.bHideSelectionTip = false;
 	Args.bShowScrollBar = false;
 
@@ -208,6 +200,16 @@ TSharedRef<SDockTab> FThumbnailCreatorModule::OnSpawnPluginTab(const FSpawnTabAr
 				]
 				+ SVerticalBox::Slot()
 				.Padding(5, 0, 5, 10)
+				.HAlign(HAlign_Fill).VAlign(VAlign_Top).AutoHeight()
+				[
+					SNew(SButton)
+					.OnClicked_Raw(this, &FThumbnailCreatorModule::UpdateViewportTransform)
+					[
+						SNew(STextBlock).Text(FText::FromString("Update Viewport Transform"))
+					]
+				]
+				+ SVerticalBox::Slot()
+				.Padding(5, 0, 5, 10)
 				.HAlign(HAlign_Fill).VAlign(VAlign_Fill).AutoHeight()
 				[
 					DetailsView->AsShared()
@@ -256,7 +258,8 @@ TSharedRef<SDockTab> FThumbnailCreatorModule::OnSpawnPluginTab(const FSpawnTabAr
 
 void FThumbnailCreatorModule::PluginButtonClicked()
 {
-	FGlobalTabmanager::Get()->InvokeTab(ThumbnailCreatorTabName);
+	//FGlobalTabmanager::Get()->InvokeTab(ThumbnailCreatorTabName);
+	FGlobalTabmanager::Get()->TryInvokeTab(ThumbnailCreatorTabName);
 }
 
 void FThumbnailCreatorModule::AddMenuExtension(FMenuBuilder& Builder)
@@ -298,6 +301,13 @@ FReply FThumbnailCreatorModule::GenerateView()
 	return FReply::Handled();
 }
 
+FReply FThumbnailCreatorModule::UpdateViewportTransform()
+{
+	const auto Options = ViewportPtr->GetViewportClient()->ThumbnailOptions;
+	ViewportPtr->GetViewportClient()->UpdateViewportTransform(Options->FOV, Options->ThumbnailPitch, Options->ThumbnailYaw, Options->ThumbnailZoom);
+	return FReply::Handled();
+}
+
 bool FThumbnailCreatorModule::NextInQueue(float Delta)
 {
 	//If we have a queue(FAssetData)
@@ -327,7 +337,7 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 		{
 			if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(RawImage.GetData(), RawImage.Num()))
 			{
-				const TArray<uint8>* UncompressedBGRA = NULL;
+				TArray64<uint8> UncompressedBGRA;
 				if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, UncompressedBGRA))
 				{
 					// Setup packagename
@@ -336,7 +346,7 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 
 					FString PackageName = TEXT("/Game/ThumbnailExports/" + USeAssetName);
 					// Create new UPackage from PackageName
-					UPackage* Package = CreatePackage(NULL, *PackageName);
+					UPackage* Package = CreatePackage(*PackageName);
 					//Try to get the old package if this image already exists
 					UPackage* OldPackage = LoadPackage(NULL, *PackageName,0);
 
@@ -350,21 +360,26 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 
 					// Stupidly use the damn factory
 					UTexture2D* Texture = (UTexture2D*)TextureFact->FactoryCreateBinary(UTexture2D::StaticClass(), OldPackage? OldPackage : Package, *USeAssetName, RF_Standalone | RF_Public, NULL, TEXT("png"), PtrTexture, PtrTexture + RawImage.Num(), GWarn);
-
+					
 					if (Texture)
 					{
 						Texture->AssetImportData->Update(IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*USeAssetName));
-
+						
 						Package->SetDirtyFlag(true);
 						TextureFact->RemoveFromRoot();
 
 						//If we already have an old package we don't want to overwrite settings to defaults
 						if (!OldPackage)
 						{
+							Texture->UpdateResource();
 							//Set settings to fit with UI
 							Texture->Filter = TextureFilter::TF_Trilinear;
 							//2D pixels for UI gives clearest results
-							Texture->LODGroup = TextureGroup::TEXTUREGROUP_Pixels2D;
+							Texture->LODGroup = TextureGroup::TEXTUREGROUP_UI;
+							//Add chroma key
+							Texture->bChromaKeyTexture = true;
+							Texture->ChromaKeyColor = FColor(0,255,0,0);
+							Texture->UpdateResource();
 						}
 						//Notify new asset created or store in the old package
 						if (OldPackage)
@@ -387,15 +402,14 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 
 		//Get all images in teh screenshot folter
 		IFileManager& FileManager = IFileManager::Get();
-		FileManager.FindFiles(AllImages, *FPaths::ScreenShotDir());
+		FileManager.FindFiles(AllImages, *Path);
 		for (FString Image : AllImages)
 		{
 			//Format full string
-			FString Full = FPaths::ScreenShotDir() + Image;
+			FString Full = Path + Image;
 			//If this image isn't in the startup(so wasn't known about before) we know it's new and we should process
 			if (!StartupImages.Contains(Full))
 			{
-
 				//Add to startup images to prevent processing again
 				StartupImages.Add(Full);
 				CreatedImages.Add(Full);
@@ -409,7 +423,7 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 //remove from startup images so we can process the image again
 void FThumbnailCreatorModule::RemoveFromPreKnown(const FString ToRemove)
 {
-	FString ToUseString = FPaths::ScreenShotDir()  + "Thumb_" + ToRemove + ".png";
+	FString ToUseString = Path  + "Thumb_" + ToRemove + ".png";
 	StartupImages.Remove(ToUseString);
 }
 
