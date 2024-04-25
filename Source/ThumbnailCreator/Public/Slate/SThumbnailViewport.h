@@ -26,16 +26,20 @@ public:
 
 	//FGCObject 
 	void AddReferencedObjects(FReferenceCollector& Collector) override;
+	virtual FString GetReferencerName() const override
+	{
+		return TEXT("SThumbnailViewport");
+	}
 	//Toolbar interface
 	virtual TSharedRef<class SEditorViewport> GetViewportWidget() override;
 	virtual TSharedPtr<FExtender> GetExtenders() const override;
 	virtual void OnFloatingButtonClicked() override;
 
 	//All components to use in the client
-	UStaticMeshComponent* MeshComp;
-	UStaticMeshComponent* MaterialComp;
-	USkeletalMeshComponent* SkelMeshComp;
-	UPostProcessComponent* PostComp;
+	TObjectPtr<UStaticMeshComponent> MeshComp;
+	TObjectPtr<UStaticMeshComponent> MaterialComp;
+	TObjectPtr<USkeletalMeshComponent> SkelMeshComp;
+	TObjectPtr<UPostProcessComponent> PostComp;
 
 	SThumbnailViewport();
 	~SThumbnailViewport();
