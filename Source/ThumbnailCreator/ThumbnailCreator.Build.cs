@@ -51,7 +51,6 @@ public class ThumbnailCreator : ModuleRules
                 "AssetRegistry",
                 "PropertyEditor",
                 "AdvancedPreviewScene",
-                "Paper2D"
 
 
 				// ... add private dependencies that you statically link with here ...	
