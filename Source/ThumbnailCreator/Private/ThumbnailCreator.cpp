@@ -8,6 +8,9 @@
 #include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Runtime/Core/Public/Containers/Ticker.h"
+#include "ContentBrowserModule.h"
+#include "ObjectTools.h"
+#include "UObject/SavePackage.h"
 
 //Thumbnail Core
 #include "Client/ThumbnailViewportClient.h"
@@ -30,6 +33,7 @@
 #include "Runtime/Core/Public/Misc/Paths.h"
 
 //Slate
+#include "ISettingsModule.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Input/SButton.h"
@@ -37,6 +41,7 @@
 #include "Widgets/Layout/SSplitter.h"
 #include "Slate/SThumbnailViewport.h"
 #include "PropertyEditorModule.h"
+#include "ThumbnailCreatorSettings.h"
 #include "Editor/AdvancedPreviewScene/Public/SAdvancedPreviewDetailsTab.h"
 #include "Widgets/Images/SImage.h"
 #include "Editor/PropertyEditor/Public/IDetailsView.h"
@@ -109,6 +114,12 @@ void FThumbnailCreatorModule::StartupModule()
 		ViewportPtr.Reset();
 	});
 
+	AddContentBrowserContextMenuExtender();
+	
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->RegisterSettings("Project", "Plugins", "ThumbnailCreator", LOCTEXT("RuntimeSettingsName", "ThumbnailCreator"), LOCTEXT("RuntimeSettingsDescription", "Configure Thumbnail Creator"), GetMutableDefault<UThumbnailCreatorSettings>());
+	}
 }
 
 void FThumbnailCreatorModule::ShutdownModule()
@@ -122,6 +133,13 @@ void FThumbnailCreatorModule::ShutdownModule()
 	FThumbnailCreatorCommands::Unregister();
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ThumbnailCreatorTabName);
+
+	RemoveContentBrowserContextMenuExtender();
+	
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->UnregisterSettings("Project", "Plugins", "ThumbnailCreator");
+	}
 }
 
 void FThumbnailCreatorModule::PreUnloadCallback()
@@ -267,6 +285,160 @@ void FThumbnailCreatorModule::AddMenuExtension(FMenuBuilder& Builder)
 	Builder.AddMenuEntry(FThumbnailCreatorCommands::Get().OpenPluginWindow);
 }
 
+void FThumbnailCreatorModule::AddContentBrowserContextMenuExtender()
+{
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+	TArray<FContentBrowserMenuExtender_SelectedAssets>& CBMenuAssetExtenderDelegates = ContentBrowserModule.GetAllAssetViewContextMenuExtenders();
+
+	CBMenuAssetExtenderDelegates.Add(FContentBrowserMenuExtender_SelectedAssets::CreateStatic(&OnExtendContentBrowserAssetSelectionMenu));
+	ContentBrowserExtenderDelegateHandle = CBMenuAssetExtenderDelegates.Last().GetHandle();
+}
+
+void FThumbnailCreatorModule::RemoveContentBrowserContextMenuExtender()
+{
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+	TArray<FContentBrowserMenuExtender_SelectedAssets>& CBMenuExtenderDelegates = ContentBrowserModule.GetAllAssetViewContextMenuExtenders();
+	CBMenuExtenderDelegates.RemoveAll([this](const FContentBrowserMenuExtender_SelectedAssets& Delegate) { return Delegate.GetHandle() == ContentBrowserExtenderDelegateHandle; });
+}
+
+TSharedRef<FExtender> FThumbnailCreatorModule::OnExtendContentBrowserAssetSelectionMenu(const TArray<FAssetData>& SelectedAssets)
+{
+	TSharedRef<FExtender> Extender = MakeShared<FExtender>();
+	Extender->AddMenuExtension(
+		"CommonAssetActions",
+		EExtensionHook::After,
+		nullptr,
+		FMenuExtensionDelegate::CreateStatic(&ExecuteSaveThumbnailAsTexture, SelectedAssets)
+	);
+	return Extender;
+}
+
+void FThumbnailCreatorModule::ExecuteSaveThumbnailAsTexture(FMenuBuilder& MenuBuilder, const TArray<FAssetData> SelectedAssets)
+{
+	// A mix of https://forums.unrealengine.com/t/copy-asset-thumbnail-to-new-texture2d/138054/4
+	// and https://isaratech.com/save-a-procedurally-generated-texture-as-a-new-asset/
+	// and https://arrowinmyknee.com/2020/08/28/asset-right-click-menu-in-ue4/
+	MenuBuilder.BeginSection("ThumbnailCreator", LOCTEXT("ASSET_CONTEXT", "ThumbnailCreator"));
+	{
+		// Add Menu Entry Here
+		MenuBuilder.AddMenuEntry(
+			LOCTEXT("ButtonName", "Export to Texture"),
+			LOCTEXT("Button ToolTip",
+			        "Will export asset's thumbnail and put it in setting's folder"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
+			{
+				for (const FAssetData& Asset : SelectedAssets)
+				{
+					int32 pathSeparatorIdx;
+					FAssetData obj = Asset;
+					FString GamePath = obj.GetAsset()->GetPathName();
+					FString AssetName;
+					int32 pathEnd;
+					if (GamePath.FindLastChar('/', pathEnd))
+					{
+						++pathEnd;
+						AssetName += GamePath;
+						AssetName.RightChopInline(pathEnd);
+						int32 extensionIdx;
+						if (AssetName.FindChar('.', extensionIdx))
+						{
+							AssetName.LeftInline(extensionIdx);
+						}
+						GamePath.LeftInline(pathEnd);
+						FString Suffix = "T_";
+						FString NameWithSuffix = Suffix + AssetName;
+						AssetName = NameWithSuffix;
+					}
+					else
+					{
+						AssetName = "T_Thumbnail";
+					}
+
+					if (AssetName.FindChar('/', pathSeparatorIdx))
+					{
+						// TextureName should not have any path separators in it
+						return;
+					}
+
+					FObjectThumbnail* thumb = ThumbnailTools::GenerateThumbnailForObjectToSaveToDisk(obj.GetAsset());
+					if (!thumb)
+					{
+						return;
+					}
+
+					//Get settings folder
+					FString PackageName;
+					if (auto Settings = GetMutableDefault<UThumbnailCreatorSettings>())
+					{
+						if (Settings->bUseCustomPath)
+						{
+							PackageName = Settings->ThumbnailTexturePath;
+						}
+						else
+						{
+							PackageName = GamePath;
+						}
+					}
+					else
+					{
+						PackageName = TEXT("/Game/ProceduralTextures/");
+					}
+					
+					if (!PackageName.EndsWith("/"))
+					{
+						PackageName += "/";
+					}
+					PackageName += AssetName;
+
+					UPackage* Package = CreatePackage(*PackageName);
+					Package->FullyLoad();
+
+					UTexture2D* NewTexture = NewObject<UTexture2D>(Package, *AssetName,
+					                                               RF_Public | RF_Standalone | RF_MarkAsRootSet);
+					NewTexture->AddToRoot();
+					FTexturePlatformData* platformData = new FTexturePlatformData();
+					platformData->SizeX = thumb->GetImageWidth();
+					platformData->SizeY = thumb->GetImageHeight();
+					//platformData->NumSlices = 1;
+					platformData->PixelFormat = PF_B8G8R8A8;
+					NewTexture->SetPlatformData(platformData);
+
+					FTexture2DMipMap* Mip = new FTexture2DMipMap();
+					platformData->Mips.Add(Mip);
+					Mip->SizeX = thumb->GetImageWidth();
+					Mip->SizeY = thumb->GetImageHeight();
+
+					Mip->BulkData.Lock(LOCK_READ_WRITE);
+					uint8* TextureData = Mip->BulkData.Realloc(thumb->GetUncompressedImageData().Num() * 4);
+					FMemory::Memcpy(TextureData, thumb->GetUncompressedImageData().GetData(),
+					                thumb->GetUncompressedImageData().Num());
+					Mip->BulkData.Unlock();
+
+					NewTexture->Source.Init(thumb->GetImageWidth(), thumb->GetImageHeight(), 1, 1, TSF_BGRA8,
+					                        thumb->GetUncompressedImageData().GetData());
+					NewTexture->LODGroup = TEXTUREGROUP_UI;
+					NewTexture->UpdateResource();
+					// ReSharper disable once CppExpressionWithoutSideEffects
+					Package->MarkPackageDirty();
+					Package->FullyLoad();
+					FAssetRegistryModule::AssetCreated(NewTexture);
+
+					FSavePackageArgs SaveArgs;
+					SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+					SaveArgs.SaveFlags = SAVE_NoError;
+					SaveArgs.bForceByteSwapping = true;
+					FString PackageFileName = FPackageName::LongPackageNameToFilename(
+						PackageName, FPackageName::GetAssetPackageExtension());
+					UPackage::SavePackage(Package, NewTexture, *PackageFileName, SaveArgs);
+				}
+			})),
+			NAME_None,
+			EUserInterfaceActionType::Button);
+	}
+	MenuBuilder.EndSection();
+}
+
 FReply FThumbnailCreatorModule::GenerateFromSelection()
 {
 	//Get content selection
@@ -344,7 +516,15 @@ bool FThumbnailCreatorModule::NextInQueue(float Delta)
 					FString AssetName = pngfile.RightChop(pngfile.Find("/", ESearchCase::IgnoreCase, ESearchDir::FromEnd) + 1);
 					FString USeAssetName = AssetName.LeftChop(AssetName.Len() - AssetName.Find( ".png", ESearchCase::IgnoreCase, ESearchDir::FromEnd));
 
-					FString PackageName = TEXT("/Game/ThumbnailExports/" + USeAssetName);
+					FString Folder = "/Game/ThumbnailExports/";
+					if (auto Settings = GetMutableDefault<UThumbnailCreatorSettings>())
+					{
+						if (Settings->bUseCustomPath)
+						{
+							Folder = Settings->ThumbnailTexturePath;
+						}
+					}
+					FString PackageName = Folder + USeAssetName;
 					// Create new UPackage from PackageName
 					UPackage* Package = CreatePackage(*PackageName);
 					//Try to get the old package if this image already exists

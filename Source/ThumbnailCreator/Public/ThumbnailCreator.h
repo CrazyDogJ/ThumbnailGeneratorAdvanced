@@ -70,6 +70,12 @@ private:
 
 	void AddToolbarExtension(FToolBarBuilder& Builder);
 	void AddMenuExtension(FMenuBuilder& Builder);
+
+	FDelegateHandle ContentBrowserExtenderDelegateHandle;
+	void AddContentBrowserContextMenuExtender();
+	void RemoveContentBrowserContextMenuExtender();
+	static TSharedRef<FExtender> OnExtendContentBrowserAssetSelectionMenu(const TArray<FAssetData>& SelectedAssets);
+	static void ExecuteSaveThumbnailAsTexture(FMenuBuilder& MenuBuilder, const TArray<FAssetData> SelectedAssets);
 	
 	TSharedRef<class SDockTab> OnSpawnPluginTab(const class FSpawnTabArgs& SpawnTabArgs);
 
